@@ -3,14 +3,20 @@
 const path = require("path");
 const fs = require("graceful-fs");
 const vm = require("vm");
+const { URL } = require("url");
 const rimraf = require("rimraf");
+const TerserPlugin = require("terser-webpack-plugin");
 const checkArrayExpectation = require("./checkArrayExpectation");
 const createLazyTestEnv = require("./helpers/createLazyTestEnv");
 const deprecationTracking = require("./helpers/deprecationTracking");
 const FakeDocument = require("./helpers/FakeDocument");
+const CurrentScript = require("./helpers/CurrentScript");
 
-const webpack = require("..");
 const prepareOptions = require("./helpers/prepareOptions");
+const { parseResource } = require("../lib/util/identifier");
+const captureStdio = require("./helpers/captureStdio");
+
+let webpack;
 
 const casesPath = path.join(__dirname, "configCases");
 const categories = fs.readdirSync(casesPath).map(cat => {
@@ -25,11 +31,21 @@ const categories = fs.readdirSync(casesPath).map(cat => {
 
 const describeCases = config => {
 	describe(config.name, () => {
+		let stderr;
+		beforeEach(() => {
+			stderr = captureStdio(process.stderr, true);
+			webpack = require("..");
+		});
+		afterEach(() => {
+			stderr.restore();
+		});
 		jest.setTimeout(20000);
 
 		for (const category of categories) {
+			// eslint-disable-next-line no-loop-func
 			describe(category.name, () => {
 				for (const testName of category.tests) {
+					// eslint-disable-next-line no-loop-func
 					describe(testName, function () {
 						const testDirectory = path.join(casesPath, category.name, testName);
 						const filterPath = path.join(testDirectory, "test.filter.js");
@@ -56,6 +72,13 @@ const describeCases = config => {
 								if (!options.optimization) options.optimization = {};
 								if (options.optimization.minimize === undefined)
 									options.optimization.minimize = false;
+								if (options.optimization.minimizer === undefined) {
+									options.optimization.minimizer = [
+										new TerserPlugin({
+											parallel: false
+										})
+									];
+								}
 								if (!options.entry) options.entry = "./index.js";
 								if (!options.target) options.target = "async-node";
 								if (!options.output) options.output = {};
@@ -71,10 +94,17 @@ const describeCases = config => {
 										...config.cache
 									};
 								}
+								if (config.snapshot) {
+									options.snapshot = {
+										...config.snapshot
+									};
+								}
 							});
 							testConfig = {
 								findBundle: function (i, options) {
-									const ext = path.extname(options.output.filename);
+									const ext = path.extname(
+										parseResource(options.output.filename).path
+									);
 									if (
 										fs.existsSync(
 											path.join(options.output.path, "bundle" + i + ext)
@@ -138,9 +168,37 @@ const describeCases = config => {
 								rimraf.sync(outputDirectory);
 								fs.mkdirSync(outputDirectory, { recursive: true });
 								const deprecationTracker = deprecationTracking.start();
-								webpack(options, err => {
+								webpack(options, (err, stats) => {
 									deprecationTracker();
 									if (err) return handleFatalError(err, done);
+									const { modules, children, errorsCount } = stats.toJson({
+										all: false,
+										modules: true,
+										errorsCount: true
+									});
+									if (errorsCount === 0) {
+										const allModules = children
+											? children.reduce(
+													(all, { modules }) => all.concat(modules),
+													modules || []
+											  )
+											: modules;
+										if (
+											allModules.some(
+												m => m.type !== "cached modules" && !m.cached
+											)
+										) {
+											return done(
+												new Error(
+													`Some modules were not cached:\n${stats.toString({
+														all: false,
+														modules: true,
+														modulesSpace: 100
+													})}`
+												)
+											);
+										}
+									}
 									done();
 								});
 							}, 20000);
@@ -192,6 +250,14 @@ const describeCases = config => {
 								) {
 									return;
 								}
+								const infrastructureLogging = stderr.toString();
+								if (infrastructureLogging) {
+									done(
+										new Error(
+											"Errors/Warnings during build:\n" + infrastructureLogging
+										)
+									);
+								}
 								if (
 									checkArrayExpectation(
 										testDirectory,
@@ -204,97 +270,6 @@ const describeCases = config => {
 									return;
 								}
 
-								const globalContext = {
-									console: console,
-									expect: expect,
-									setTimeout: setTimeout,
-									clearTimeout: clearTimeout,
-									document: new FakeDocument(),
-									location: {
-										href: "https://test.cases/path/index.html",
-										origin: "https://test.cases",
-										toString() {
-											return "https://test.cases/path/index.html";
-										}
-									}
-								};
-
-								const requireCache = Object.create(null);
-								function _require(currentDirectory, options, module) {
-									if (Array.isArray(module) || /^\.\.?\//.test(module)) {
-										let content;
-										let p;
-										if (Array.isArray(module)) {
-											p = path.join(currentDirectory, ".array-require.js");
-											content = `module.exports = (${module
-												.map(arg => {
-													return `require(${JSON.stringify(`./${arg}`)})`;
-												})
-												.join(", ")});`;
-										} else {
-											p = path.join(currentDirectory, module);
-											content = fs.readFileSync(p, "utf-8");
-										}
-										if (p in requireCache) {
-											return requireCache[p].exports;
-										}
-										const m = {
-											exports: {}
-										};
-										requireCache[p] = m;
-										let runInNewContext = false;
-										const moduleScope = {
-											require: _require.bind(null, path.dirname(p), options),
-											importScripts: _require.bind(
-												null,
-												path.dirname(p),
-												options
-											),
-											module: m,
-											exports: m.exports,
-											__dirname: path.dirname(p),
-											__filename: p,
-											it: _it,
-											beforeEach: _beforeEach,
-											afterEach: _afterEach,
-											expect,
-											jest,
-											_globalAssign: { expect },
-											__STATS__: jsonStats,
-											nsObj: m => {
-												Object.defineProperty(m, Symbol.toStringTag, {
-													value: "Module"
-												});
-												return m;
-											}
-										};
-										if (
-											options.target === "web" ||
-											options.target === "webworker"
-										) {
-											moduleScope.window = globalContext;
-											moduleScope.self = globalContext;
-											runInNewContext = true;
-										}
-										if (testConfig.moduleScope) {
-											testConfig.moduleScope(moduleScope);
-										}
-										const args = Object.keys(moduleScope).join(", ");
-										if (!runInNewContext)
-											content = `Object.assign(global, _globalAssign); ${content}`;
-										const code = `(function({${args}}) {${content}\n})`;
-										const fn = runInNewContext
-											? vm.runInNewContext(code, globalContext, p)
-											: vm.runInThisContext(code, p);
-										fn.call(m.exports, moduleScope);
-										return m.exports;
-									} else if (
-										testConfig.modules &&
-										module in testConfig.modules
-									) {
-										return testConfig.modules[module];
-									} else return require(module);
-								}
 								let filesCount = 0;
 
 								if (testConfig.noTests) return process.nextTick(done);
@@ -304,6 +279,144 @@ const describeCases = config => {
 									const bundlePath = testConfig.findBundle(i, optionsArr[i]);
 									if (bundlePath) {
 										filesCount++;
+										const document = new FakeDocument();
+										const globalContext = {
+											console: console,
+											expect: expect,
+											setTimeout: setTimeout,
+											clearTimeout: clearTimeout,
+											document,
+											location: {
+												href: "https://test.cases/path/index.html",
+												origin: "https://test.cases",
+												toString() {
+													return "https://test.cases/path/index.html";
+												}
+											}
+										};
+
+										const requireCache = Object.create(null);
+										// eslint-disable-next-line no-loop-func
+										const _require = (currentDirectory, options, module) => {
+											if (Array.isArray(module) || /^\.\.?\//.test(module)) {
+												let content;
+												let p;
+												let subPath = "";
+												if (Array.isArray(module)) {
+													p = path.join(currentDirectory, ".array-require.js");
+													content = `module.exports = (${module
+														.map(arg => {
+															return `require(${JSON.stringify(`./${arg}`)})`;
+														})
+														.join(", ")});`;
+												} else {
+													p = path.join(currentDirectory, module);
+													content = fs.readFileSync(p, "utf-8");
+													const lastSlash = module.lastIndexOf("/");
+													let firstSlash = module.indexOf("/");
+
+													if (lastSlash !== -1 && firstSlash !== lastSlash) {
+														if (firstSlash !== -1) {
+															let next = module.indexOf("/", firstSlash + 1);
+															let dir = module.slice(firstSlash + 1, next);
+
+															while (dir === ".") {
+																firstSlash = next;
+																next = module.indexOf("/", firstSlash + 1);
+																dir = module.slice(firstSlash + 1, next);
+															}
+														}
+
+														subPath = module.slice(
+															firstSlash + 1,
+															lastSlash + 1
+														);
+													}
+												}
+												if (p in requireCache) {
+													return requireCache[p].exports;
+												}
+												const m = {
+													exports: {}
+												};
+												requireCache[p] = m;
+												let runInNewContext = false;
+												let oldCurrentScript = document.currentScript;
+												document.currentScript = new CurrentScript(subPath);
+
+												const moduleScope = {
+													require: _require.bind(
+														null,
+														path.dirname(p),
+														options
+													),
+													importScripts: url => {
+														expect(url).toMatch(
+															/^https:\/\/test\.cases\/path\//
+														);
+														_require(
+															outputDirectory,
+															options,
+															`.${url.slice("https://test.cases/path".length)}`
+														);
+													},
+													module: m,
+													exports: m.exports,
+													__dirname: path.dirname(p),
+													__filename: p,
+													it: _it,
+													beforeEach: _beforeEach,
+													afterEach: _afterEach,
+													expect,
+													jest,
+													_globalAssign: { expect },
+													__STATS__: jsonStats,
+													nsObj: m => {
+														Object.defineProperty(m, Symbol.toStringTag, {
+															value: "Module"
+														});
+														return m;
+													}
+												};
+												if (
+													options.target === "web" ||
+													options.target === "webworker"
+												) {
+													moduleScope.window = globalContext;
+													moduleScope.self = globalContext;
+													moduleScope.URL = URL;
+													moduleScope.Worker = require("./helpers/createFakeWorker")(
+														{ outputDirectory }
+													);
+													runInNewContext = true;
+												}
+												if (testConfig.moduleScope) {
+													testConfig.moduleScope(moduleScope);
+												}
+												const args = Object.keys(moduleScope);
+												const argValues = args.map(arg => moduleScope[arg]);
+												if (!runInNewContext)
+													content = `Object.assign(global, _globalAssign); ${content}`;
+												const code = `(function(${args.join(
+													", "
+												)}) {${content}\n})`;
+												const fn = runInNewContext
+													? vm.runInNewContext(code, globalContext, p)
+													: vm.runInThisContext(code, p);
+												fn.call(m.exports, ...argValues);
+
+												//restore state
+												document.currentScript = oldCurrentScript;
+
+												return m.exports;
+											} else if (
+												testConfig.modules &&
+												module in testConfig.modules
+											) {
+												return testConfig.modules[module];
+											} else return require(module);
+										};
+
 										results.push(
 											_require(outputDirectory, optionsArr[i], bundlePath)
 										);

@@ -27,15 +27,23 @@ const describeCases = config => {
 		categories.forEach(category => {
 			describe(category.name, () => {
 				category.tests.forEach(testName => {
+					const testDirectory = path.join(casesPath, category.name, testName);
+					const filterPath = path.join(testDirectory, "test.filter.js");
+					if (fs.existsSync(filterPath) && !require(filterPath)()) {
+						describe.skip(testName, () => {
+							it("filtered", () => {});
+						});
+						return;
+					}
 					describe(testName, () => {
+						let compiler;
+						afterAll(callback => {
+							compiler.close(callback);
+						});
+
 						it(
 							testName + " should compile",
 							done => {
-								const testDirectory = path.join(
-									casesPath,
-									category.name,
-									testName
-								);
 								const outputDirectory = path.join(
 									__dirname,
 									"js",
@@ -66,6 +74,8 @@ const describeCases = config => {
 									options.output.chunkFilename = "[name].chunk.[fullhash].js";
 								if (options.output.pathinfo === undefined)
 									options.output.pathinfo = true;
+								if (options.output.publicPath === undefined)
+									options.output.publicPath = "https://test.cases/path/";
 								if (options.output.library === undefined)
 									options.output.library = { type: "commonjs2" };
 								if (!options.optimization) options.optimization = {};
@@ -88,7 +98,7 @@ const describeCases = config => {
 									new webpack.LoaderOptionsPlugin(fakeUpdateLoaderOptions)
 								);
 								if (!options.recordsPath) options.recordsPath = recordsPath;
-								const compiler = webpack(options);
+								compiler = webpack(options);
 								compiler.run((err, stats) => {
 									if (err) return done(err);
 									const jsonStats = stats.toJson({
@@ -117,19 +127,42 @@ const describeCases = config => {
 										return;
 									}
 
+									const urlToPath = url => {
+										if (url.startsWith("https://test.cases/path/"))
+											url = url.slice(24);
+										return path.resolve(outputDirectory, `./${url}`);
+									};
+									const urlToRelativePath = url => {
+										if (url.startsWith("https://test.cases/path/"))
+											url = url.slice(24);
+										return `./${url}`;
+									};
 									const window = {
-										fetch: url => {
-											return Promise.resolve({
-												ok: true,
-												json() {
-													return Promise.resolve(
-														require(path.resolve(outputDirectory, url))
-													);
+										fetch: async url => {
+											try {
+												const buffer = await new Promise((resolve, reject) =>
+													fs.readFile(urlToPath(url), (err, b) =>
+														err ? reject(err) : resolve(b)
+													)
+												);
+												return {
+													status: 200,
+													ok: true,
+													json: async () => JSON.parse(buffer.toString("utf-8"))
+												};
+											} catch (err) {
+												if (err.code === "ENOENT") {
+													return {
+														status: 404,
+														ok: false
+													};
 												}
-											});
+												throw err;
+											}
 										},
 										importScripts: url => {
-											_require("./" + url);
+											expect(url).toMatch(/^https:\/\/test\.cases\/path\//);
+											_require(urlToRelativePath(url));
 										},
 										document: {
 											createElement(type) {
@@ -151,7 +184,7 @@ const describeCases = config => {
 													if (element._type === "script") {
 														// run it
 														Promise.resolve().then(() => {
-															_require("./" + element.src);
+															_require(urlToRelativePath(element.src));
 														});
 													}
 												}
@@ -160,6 +193,17 @@ const describeCases = config => {
 												if (name === "head") return [this.head];
 												if (name === "script") return [];
 												throw new Error("Not supported");
+											}
+										},
+										Worker: require("./helpers/createFakeWorker")({
+											outputDirectory
+										}),
+										EventSource: require("./helpers/EventSourceForNode"),
+										location: {
+											href: "https://test.cases/path/index.html",
+											origin: "https://test.cases",
+											toString() {
+												return "https://test.cases/path/index.html";
 											}
 										}
 									};
@@ -206,7 +250,7 @@ const describeCases = config => {
 												return JSON.parse(fs.readFileSync(p, "utf-8"));
 											} else {
 												const fn = vm.runInThisContext(
-													"(function(require, module, exports, __dirname, __filename, it, expect, self, window, fetch, document, importScripts, NEXT, STATS) {" +
+													"(function(require, module, exports, __dirname, __filename, it, beforeEach, afterEach, expect, self, window, fetch, document, importScripts, Worker, EventSource, NEXT, STATS) {" +
 														"global.expect = expect;" +
 														'function nsObj(m) { Object.defineProperty(m, Symbol.toStringTag, { value: "Module" }); return m; }' +
 														fs.readFileSync(p, "utf-8") +
@@ -224,12 +268,16 @@ const describeCases = config => {
 													outputDirectory,
 													p,
 													_it,
+													_beforeEach,
+													_afterEach,
 													expect,
 													window,
 													window,
 													window.fetch,
 													window.document,
 													window.importScripts,
+													window.Worker,
+													window.EventSource,
 													_next,
 													jsonStats
 												);
@@ -241,10 +289,12 @@ const describeCases = config => {
 									const info = stats.toJson({ all: false, entrypoints: true });
 									if (config.target === "web") {
 										for (const file of info.entrypoints.main.assets)
-											_require(`./${file}`);
+											_require(`./${file.name}`);
 									} else {
 										const assets = info.entrypoints.main.assets;
-										const result = _require(`./${assets[assets.length - 1]}`);
+										const result = _require(
+											`./${assets[assets.length - 1].name}`
+										);
 										if (typeof result === "object" && "then" in result)
 											promise = promise.then(() => result);
 									}
@@ -267,10 +317,12 @@ const describeCases = config => {
 							20000
 						);
 
-						const { it: _it, getNumberOfTests } = createLazyTestEnv(
-							jasmine.getEnv(),
-							20000
-						);
+						const {
+							it: _it,
+							beforeEach: _beforeEach,
+							afterEach: _afterEach,
+							getNumberOfTests
+						} = createLazyTestEnv(jasmine.getEnv(), 20000);
 					});
 				});
 			});

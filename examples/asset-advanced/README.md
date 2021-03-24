@@ -64,9 +64,6 @@ module.exports = {
 				}
 			}
 		]
-	},
-	experiments: {
-		asset: true
 	}
 };
 ```
@@ -77,13 +74,54 @@ module.exports = {
 /******/ (() => { // webpackBootstrap
 /******/ 	"use strict";
 /******/ 	var __webpack_modules__ = ([
-/* 0 */,
+/* 0 */
+/*!********************!*\
+  !*** ./example.js ***!
+  \********************/
+/*! namespace exports */
+/*! exports [not provided] [no usage info] */
+/*! runtime requirements: __webpack_require__, __webpack_require__.r, __webpack_exports__, __webpack_require__.* */
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony import */ var _images_file_svg__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./images/file.svg */ 1);
+
+
+const container = document.createElement("div");
+Object.assign(container.style, {
+	display: "flex",
+	justifyContent: "center"
+});
+document.body.appendChild(container);
+
+function createImageElement(title, src) {
+	const div = document.createElement("div");
+	div.style.textAlign = "center";
+
+	const h2 = document.createElement("h2");
+	h2.textContent = title;
+	div.appendChild(h2);
+
+	const img = document.createElement("img");
+	img.setAttribute("src", src);
+	img.setAttribute("width", "150");
+	div.appendChild(img);
+
+	container.appendChild(div);
+}
+
+[_images_file_svg__WEBPACK_IMPORTED_MODULE_0__].forEach(src => {
+	createImageElement(src.split(".").pop(), src);
+});
+
+
+/***/ }),
 /* 1 */
 /*!*************************!*\
   !*** ./images/file.svg ***!
   \*************************/
 /*! default exports */
-/*! exports [not provided] [maybe used (runtime-defined)] */
+/*! exports [not provided] [no usage info] */
 /*! runtime requirements: module */
 /***/ ((module) => {
 
@@ -121,50 +159,27 @@ module.exports = "data:image/svg+xml,%3csvg xmlns='http://www.w3.or...3c/svg%3e"
 /******/ 	}
 /******/ 	
 /************************************************************************/
+/******/ 	/* webpack/runtime/make namespace object */
+/******/ 	(() => {
+/******/ 		// define __esModule on exports
+/******/ 		__webpack_require__.r = (exports) => {
+/******/ 			if(typeof Symbol !== 'undefined' && Symbol.toStringTag) {
+/******/ 				Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
+/******/ 			}
+/******/ 			Object.defineProperty(exports, '__esModule', { value: true });
+/******/ 		};
+/******/ 	})();
+/******/ 	
+/************************************************************************/
 ```
 
 </details>
 
 ``` js
-(() => {
-/*!********************!*\
-  !*** ./example.js ***!
-  \********************/
-/*! namespace exports */
-/*! exports [not provided] [unused] */
-/*! runtime requirements: __webpack_require__ */
-/* harmony import */ var _images_file_svg__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./images/file.svg */ 1);
-
-
-const container = document.createElement("div");
-Object.assign(container.style, {
-	display: "flex",
-	justifyContent: "center"
-});
-document.body.appendChild(container);
-
-function createImageElement(title, src) {
-	const div = document.createElement("div");
-	div.style.textAlign = "center";
-
-	const h2 = document.createElement("h2");
-	h2.textContent = title;
-	div.appendChild(h2);
-
-	const img = document.createElement("img");
-	img.setAttribute("src", src);
-	img.setAttribute("width", "150");
-	div.appendChild(img);
-
-	container.appendChild(div);
-}
-
-[_images_file_svg__WEBPACK_IMPORTED_MODULE_0__].forEach(src => {
-	createImageElement(src.split(".").pop(), src);
-});
-
-})();
-
+/******/ 	// startup
+/******/ 	// Load entry module
+/******/ 	__webpack_require__(0);
+/******/ 	// This entry module used 'exports' so it can't be inlined
 /******/ })()
 ;
 ```
@@ -174,19 +189,14 @@ function createImageElement(title, src) {
 ## webpack output
 
 ```
-Hash: 0a1b2c3d4e5f6a7b8c9d
-Version: webpack 5.0.0-beta.16
-    Asset      Size
-output.js  3.02 KiB  [emitted]  [name: main]
-Entrypoint main = output.js
-chunk output.js (main) 1.54 KiB [entry] [rendered]
-    > ./example.js main
- ./example.js 658 bytes [built]
-     [no exports]
-     [no exports used]
-     entry ./example.js main
- ./images/file.svg 915 bytes [built]
-     [no exports]
-     harmony side effect evaluation ./images/file.svg ./example.js 1:0-36
-     harmony import specifier ./images/file.svg ./example.js 26:1-4
+asset output.js 3.86 KiB [emitted] (name: main)
+chunk (runtime: main) output.js (main) 1.54 KiB (javascript) 274 bytes (runtime) [entry] [rendered]
+  > ./example.js main
+  dependent modules 915 bytes [dependent] 1 module
+  runtime modules 274 bytes 1 module
+  ./example.js 658 bytes [built] [code generated]
+    [no exports]
+    [used exports unknown]
+    entry ./example.js main
+webpack 5.11.1 compiled successfully
 ```

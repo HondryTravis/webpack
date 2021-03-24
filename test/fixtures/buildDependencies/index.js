@@ -3,5 +3,8 @@
 module.exports = {
 	loader: require("./loader!"),
 	config: VALUE,
-	uncached: require("./module")
+	esmConfig: VALUE2,
+	esmAsyncConfig: VALUE3,
+	uncached: require("./module"),
+	definedValue: require("./definedValue")
 };

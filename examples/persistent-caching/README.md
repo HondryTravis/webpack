@@ -55,40 +55,34 @@ module.exports = (env = "development") => ({
 ## Unoptimized
 
 ```
-Hash: 0a1b2c3d4e5f6a7b8c9d
-Version: webpack 5.0.0-beta.16
-    Asset     Size
-output.js  3.5 MiB  [emitted]  [name: main]
-Entrypoint main = output.js
-chunk output.js (main) 2.55 MiB (javascript) 0 bytes (runtime) [entry]
-    > ./example.js main
-    991 chunk modules
+asset output.js 3.99 MiB [emitted] (name: main)
+chunk (runtime: main) output.js (main) 2.86 MiB (javascript) 1.58 KiB (runtime) [entry]
+  > ./example.js main
+  cached modules 2.86 MiB (javascript) 1.58 KiB (runtime) [cached] 1210 modules
+webpack 5.11.1 compiled successfully
 ```
 
 ## Production mode
 
 ```
-Hash: 0a1b2c3d4e5f6a7b8c9d
-Version: webpack 5.0.0-beta.16
-                Asset      Size
-            output.js   479 KiB  [emitted]  [big]  [name: main]
-output.js.LICENSE.txt  1.49 KiB  [emitted]
-Entrypoint main [big] = output.js
-chunk output.js (main) 1.64 MiB (javascript) 0 bytes (runtime) [entry]
-    > ./example.js main
-    370 chunk modules
+asset output.js 551 KiB [emitted] [minimized] [big] (name: main) 1 related asset
+chunk (runtime: main) output.js (main) 1.91 MiB (javascript) 1.58 KiB (runtime) [entry]
+  > ./example.js main
+  cached modules 1.91 MiB (javascript) 1.58 KiB (runtime) [cached] 591 modules
 
 WARNING in asset size limit: The following asset(s) exceed the recommended size limit (244 KiB).
 This can impact web performance.
 Assets: 
-  output.js (479 KiB)
+  output.js (551 KiB)
 
 WARNING in entrypoint size limit: The following entrypoint(s) combined asset size exceeds the recommended limit (244 KiB). This can impact web performance.
 Entrypoints:
-  main (479 KiB)
+  main (551 KiB)
       output.js
 
 WARNING in webpack performance recommendations: 
 You can limit the size of your bundles by using import() or require.ensure to lazy load some parts of your application.
 For more info visit https://webpack.js.org/guides/code-splitting/
+
+webpack 5.11.1 compiled with 3 warnings
 ```
